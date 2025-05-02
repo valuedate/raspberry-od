@@ -1,0 +1,96 @@
+{% extends 'viewer/base.html' %}
+{% load static %}
+
+{% block title %}Detection History{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h1 class="mb-4"><i class="fas fa-history"></i> Detection History</h1>
+
+    <!-- Search Form -->
+    <form method="get" action="{% url 'history' %}" class="mb-4">
+        <div class="input-group">
+            <input type="text" class="form-control" name="q" placeholder="Search by label (e.g., person, car, plate number)..." value="{{ query }}">
+            <button class="btn btn-outline-secondary" type="submit"><i class="fas fa-search"></i> Search</button>
+        </div>
+    </form>
+
+    {% if page_obj %}
+    <div class="row row-cols-1 row-cols-sm-2 row-cols-md-3 row-cols-lg-4 g-4">
+        {% for detection in page_obj %}
+        <div class="col">
+            <div class="card h-100 shadow-sm">
+                <img src="{{ MEDIA_URL }}{{ detection.image_path }}" 
+                     class="card-img-top detection-img" 
+                     alt="{{ detection.label }}" 
+                     data-bs-toggle="modal" 
+                     data-bs-target="#imageModal" 
+                     data-bs-image-url="{{ MEDIA_URL }}{{ detection.image_path }}">
+                <div class="card-body">
+                    <p class="card-text mb-1">
+                        <small class="text-muted">
+                            <i class="fas fa-tag"></i> Label: 
+                            {% if 'car_plate_' in detection.label %}
+                                <span class="badge bg-success">{{ detection.label|cut:"car_plate_" }}</span> (Car Plate)
+                            {% elif detection.label == 'car_no_plate' %}
+                                <span class="badge bg-warning text-dark">Car (No Plate)</span>
+                            {% elif detection.label == 'person' %}
+                                <span class="badge bg-info text-dark">Person</span>
+                            {% else %}
+                                <span class="badge bg-secondary">{{ detection.label }}</span>
+                            {% endif %}
+                        </small>
+                    </p>
+                    <p class="card-text">
+                        <small class="text-muted">
+                            <i class="fas fa-clock"></i> Detected: {{ detection.timestamp|date:"Y-m-d H:i:s" }}
+                        </small>
+                    </p>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- Pagination -->
+    <nav aria-label="Page navigation" class="mt-4">
+        <ul class="pagination justify-content-center">
+            {% if page_obj.has_previous %}
+                <li class="page-item">
+                    <a class="page-link" href="?page=1{% if query %}&q={{ query }}{% endif %}">&laquo; First</a>
+                </li>
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ page_obj.previous_page_number }}{% if query %}&q={{ query }}{% endif %}">Previous</a>
+                </li>
+            {% else %}
+                <li class="page-item disabled"><span class="page-link">&laquo; First</span></li>
+                <li class="page-item disabled"><span class="page-link">Previous</span></li>
+            {% endif %}
+
+            <li class="page-item disabled">
+                <span class="page-link">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}.</span>
+            </li>
+
+            {% if page_obj.has_next %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ page_obj.next_page_number }}{% if query %}&q={{ query }}{% endif %}">Next</a>
+                </li>
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ page_obj.paginator.num_pages }}{% if query %}&q={{ query }}{% endif %}">Last &raquo;</a>
+                </li>
+            {% else %}
+                <li class="page-item disabled"><span class="page-link">Next</span></li>
+                <li class="page-item disabled"><span class="page-link">Last &raquo;</span></li>
+            {% endif %}
+        </ul>
+    </nav>
+
+    {% else %}
+    <div class="alert alert-info" role="alert">
+        No detections found matching your criteria.
+    </div>
+    {% endif %}
+
+</div>
+{% endblock %}
+
