@@ -61,7 +61,7 @@ This application connects to a Hikvision camera stream, performs object detectio
 
 1.  **Prerequisites:**
     *   Raspberry Pi 5 with Raspberry Pi OS (or similar Linux distribution) installed.
-    *   Python 3.9+ installed.
+    *   Python 3.11.2 installed.
     *   Internet connection (for downloading packages and models).
     *   Ensure your Hikvision camera is connected to the same network and RTSP streaming is enabled.
 

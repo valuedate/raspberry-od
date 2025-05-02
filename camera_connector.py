@@ -4,7 +4,7 @@ import time
 # --- Configuration ---
 # TODO: Replace with actual camera credentials and IP address
 CAMERA_USERNAME = "admin"
-CAMERA_PASSWORD = "123456"
+CAMERA_PASSWORD = "rFERNANDES18"
 CAMERA_IP = "10.0.0.115"
 CHANNEL = 1  # Usually 1 for the first channel
 STREAM_TYPE = 1  # 1 for main stream, 2 for sub stream
