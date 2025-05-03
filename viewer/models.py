@@ -5,7 +5,7 @@ class Detection(models.Model):
     label = models.CharField(max_length=100) # e.g., 'person', 'car_no_plate', 'car_plate_ABC123'
     image_path = models.CharField(max_length=255)
     # Optional: Store confidence score if needed
-    # confidence = models.FloatField(null=True, blank=True)
+    confidence = models.FloatField(null=True, blank=True)
 
     def __str__(self):
         return f"{self.label} at {self.timestamp.strftime('%Y-%m-%d %H:%M:%S')}"
