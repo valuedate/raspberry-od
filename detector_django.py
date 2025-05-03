@@ -672,7 +672,7 @@ def connect_capture_detect(rtsp_url):
     
     logger.info("Successfully connected to the camera stream.")
     
-    global previous_frame, recording_writer, recording_start_time, running, last_db_cleanup_time
+    global previous_frame, recording_writer, recording_start_time, running, last_db_cleanup_time, last_motion_check_time
     
     # Register signal handlers for graceful shutdown
     signal.signal(signal.SIGINT, signal_handler)
@@ -683,6 +683,7 @@ def connect_capture_detect(rtsp_url):
     skipped_duplicates = 0
     start_time = time.time()
     last_db_cleanup_time = time.time()
+    last_motion_check_time = time.time()
     
     try:
         while running:
