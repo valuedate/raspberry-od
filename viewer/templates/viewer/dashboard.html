@@ -47,7 +47,7 @@
                     <div class="mt-2">
                         <span class="{% if total_variation >= 0 %}variation-up{% else %}variation-down{% endif %}">
                             <i class="fas fa-{% if total_variation >= 0 %}arrow-up{% else %}arrow-down{% endif %}"></i>
-                            {{ total_variation|abs }}%
+                            {{ total_variation }}%
                         </span>
                         <small class="text-white-50 ms-1">vs previous period</small>
                     </div>
@@ -67,7 +67,7 @@
                     <div class="mt-2">
                         <span class="{% if vehicle_variation >= 0 %}variation-up{% else %}variation-down{% endif %}">
                             <i class="fas fa-{% if vehicle_variation >= 0 %}arrow-up{% else %}arrow-down{% endif %}"></i>
-                            {{ vehicle_variation|abs }}%
+                            {{ vehicle_variation }}%
                         </span>
                         <small class="text-white-50 ms-1">vs previous period</small>
                     </div>
@@ -87,7 +87,7 @@
                     <div class="mt-2">
                         <span class="{% if person_variation >= 0 %}variation-up{% else %}variation-down{% endif %}">
                             <i class="fas fa-{% if person_variation >= 0 %}arrow-up{% else %}arrow-down{% endif %}"></i>
-                            {{ person_variation|abs }}%
+                            {{ person_variation}}%
                         </span>
                         <small class="text-white-50 ms-1">vs previous period</small>
                     </div>
@@ -107,7 +107,7 @@
                     <div class="mt-2">
                         <span class="{% if plate_variation >= 0 %}variation-up{% else %}variation-down{% endif %}">
                             <i class="fas fa-{% if plate_variation >= 0 %}arrow-up{% else %}arrow-down{% endif %}"></i>
-                            {{ plate_variation|abs }}%
+                            {{ plate_variation }}%
                         </span>
                         <small class="text-dark-50 ms-1">vs previous period</small>
                     </div>
