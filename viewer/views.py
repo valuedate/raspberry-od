@@ -122,3 +122,123 @@ def history_view(request):
 # This requires more complex handling (e.g., JavaScript on page unload)
 # For simplicity, the thread runs as long as the Django server runs.
 
+
+from django.views.generic import TemplateView
+from django.utils import timezone
+from django.db.models import Count, Q
+import json
+from datetime import timedelta
+
+from .models import Detection
+
+class DashboardView(TemplateView):
+    template_name = 'viewer/dashboard.html'
+    
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        
+        # Get current date info
+        today = timezone.now().date()
+        yesterday = today - timedelta(days=1)
+        
+        # Calculate all-time statistics
+        context['total_detections'] = Detection.objects.count()
+        context['vehicle_count'] = Detection.objects.filter(
+            Q(label='car_no_plate') | Q(label__startswith='car_plate_')
+        ).count()
+        context['vehicle_no_plate_count'] = Detection.objects.filter(label='car_no_plate').count()
+        context['person_count'] = Detection.objects.filter(label='person').count()
+        context['plate_count'] = Detection.objects.filter(label__startswith='car_plate_').count()
+        context['other_count'] = context['total_detections'] - context['vehicle_count'] - context['person_count']
+        
+        # Calculate today's statistics
+        context['today_total'] = Detection.objects.filter(timestamp__date=today).count()
+        context['today_vehicles'] = Detection.objects.filter(
+            (Q(label='car_no_plate') | Q(label__startswith='car_plate_')) & 
+            Q(timestamp__date=today)
+        ).count()
+        context['today_people'] = Detection.objects.filter(
+            label='person', 
+            timestamp__date=today
+        ).count()
+        context['today_plates'] = Detection.objects.filter(
+            label__startswith='car_plate_', 
+            timestamp__date=today
+        ).count()
+        
+        # Calculate yesterday's statistics for variation
+        yesterday_total = Detection.objects.filter(timestamp__date=yesterday).count()
+        yesterday_vehicles = Detection.objects.filter(
+            (Q(label='car_no_plate') | Q(label__startswith='car_plate_')) & 
+            Q(timestamp__date=yesterday)
+        ).count()
+        yesterday_people = Detection.objects.filter(
+            label='person', 
+            timestamp__date=yesterday
+        ).count()
+        yesterday_plates = Detection.objects.filter(
+            label__startswith='car_plate_', 
+            timestamp__date=yesterday
+        ).count()
+        
+        # Calculate percentage variations (avoid division by zero)
+        context['total_variation'] = self._calculate_variation(
+            context['today_total'], yesterday_total)
+        context['vehicle_variation'] = self._calculate_variation(
+            context['today_vehicles'], yesterday_vehicles)
+        context['person_variation'] = self._calculate_variation(
+            context['today_people'], yesterday_people)
+        context['plate_variation'] = self._calculate_variation(
+            context['today_plates'], yesterday_plates)
+        
+        # Get data for the last 7 days
+        last_7_days = []
+        last_7_days_labels = []
+        last_7_days_total = []
+        last_7_days_vehicles = []
+        last_7_days_people = []
+        last_7_days_plates = []
+        
+        for i in range(6, -1, -1):
+            day = today - timedelta(days=i)
+            last_7_days.append(day)
+            last_7_days_labels.append(day.strftime('%b %d'))
+            
+            # Count detections for this day
+            day_total = Detection.objects.filter(timestamp__date=day).count()
+            day_vehicles = Detection.objects.filter(
+                (Q(label='car_no_plate') | Q(label__startswith='car_plate_')) & 
+                Q(timestamp__date=day)
+            ).count()
+            day_people = Detection.objects.filter(
+                label='person', 
+                timestamp__date=day
+            ).count()
+            day_plates = Detection.objects.filter(
+                label__startswith='car_plate_', 
+                timestamp__date=day
+            ).count()
+            
+            last_7_days_total.append(day_total)
+            last_7_days_vehicles.append(day_vehicles)
+            last_7_days_people.append(day_people)
+            last_7_days_plates.append(day_plates)
+        
+        # Convert to JSON for JavaScript
+        context['last_7_days_labels'] = json.dumps(last_7_days_labels)
+        context['last_7_days_total'] = json.dumps(last_7_days_total)
+        context['last_7_days_vehicles'] = json.dumps(last_7_days_vehicles)
+        context['last_7_days_people'] = json.dumps(last_7_days_people)
+        context['last_7_days_plates'] = json.dumps(last_7_days_plates)
+        
+        # Get latest detections
+        context['latest_detections'] = Detection.objects.all()[:8]  # Show 8 latest detections
+        
+        return context
+    
+    def _calculate_variation(self, current, previous):
+        """Calculate percentage variation between two values"""
+        if previous == 0:
+            return 100 if current > 0 else 0
+        return round(((current - previous) / previous) * 100)
+

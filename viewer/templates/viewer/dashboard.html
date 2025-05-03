@@ -1,0 +1,356 @@
+{% extends 'viewer/base.html' %}
+{% load static %}
+
+{% block title %}Detection Dashboard{% endblock %}
+
+{% block extra_css %}
+<style>
+    .kpi-card {
+        transition: transform 0.3s;
+    }
+    .kpi-card:hover {
+        transform: translateY(-5px);
+    }
+    .variation-up {
+        color: #28a745;
+    }
+    .variation-down {
+        color: #dc3545;
+    }
+    .detection-img {
+        height: 150px;
+        object-fit: cover;
+        cursor: pointer;
+    }
+    .chart-container {
+        height: 300px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h1 class="mb-4"><i class="fas fa-tachometer-alt"></i> Detection Dashboard</h1>
+    
+    <!-- Summary KPI Cards -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card kpi-card bg-primary text-white shadow h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="text-uppercase">Total Detections</h6>
+                            <h2 class="mb-0">{{ total_detections }}</h2>
+                        </div>
+                        <i class="fas fa-camera fa-2x opacity-50"></i>
+                    </div>
+                    <div class="mt-2">
+                        <span class="{% if total_variation >= 0 %}variation-up{% else %}variation-down{% endif %}">
+                            <i class="fas fa-{% if total_variation >= 0 %}arrow-up{% else %}arrow-down{% endif %}"></i>
+                            {{ total_variation|abs }}%
+                        </span>
+                        <small class="text-white-50 ms-1">vs previous period</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card kpi-card bg-success text-white shadow h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="text-uppercase">Vehicles</h6>
+                            <h2 class="mb-0">{{ vehicle_count }}</h2>
+                        </div>
+                        <i class="fas fa-car fa-2x opacity-50"></i>
+                    </div>
+                    <div class="mt-2">
+                        <span class="{% if vehicle_variation >= 0 %}variation-up{% else %}variation-down{% endif %}">
+                            <i class="fas fa-{% if vehicle_variation >= 0 %}arrow-up{% else %}arrow-down{% endif %}"></i>
+                            {{ vehicle_variation|abs }}%
+                        </span>
+                        <small class="text-white-50 ms-1">vs previous period</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card kpi-card bg-info text-white shadow h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="text-uppercase">People</h6>
+                            <h2 class="mb-0">{{ person_count }}</h2>
+                        </div>
+                        <i class="fas fa-user fa-2x opacity-50"></i>
+                    </div>
+                    <div class="mt-2">
+                        <span class="{% if person_variation >= 0 %}variation-up{% else %}variation-down{% endif %}">
+                            <i class="fas fa-{% if person_variation >= 0 %}arrow-up{% else %}arrow-down{% endif %}"></i>
+                            {{ person_variation|abs }}%
+                        </span>
+                        <small class="text-white-50 ms-1">vs previous period</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card kpi-card bg-warning text-dark shadow h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="text-uppercase">License Plates</h6>
+                            <h2 class="mb-0">{{ plate_count }}</h2>
+                        </div>
+                        <i class="fas fa-id-card fa-2x opacity-50"></i>
+                    </div>
+                    <div class="mt-2">
+                        <span class="{% if plate_variation >= 0 %}variation-up{% else %}variation-down{% endif %}">
+                            <i class="fas fa-{% if plate_variation >= 0 %}arrow-up{% else %}arrow-down{% endif %}"></i>
+                            {{ plate_variation|abs }}%
+                        </span>
+                        <small class="text-dark-50 ms-1">vs previous period</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Today's Stats -->
+    <div class="row mb-4">
+        <div class="col-md-12">
+            <div class="card shadow">
+                <div class="card-header bg-white">
+                    <h5 class="mb-0"><i class="fas fa-calendar-day"></i> Today's Statistics</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-3 text-center">
+                            <h3>{{ today_total }}</h3>
+                            <p class="text-muted">Total Detections</p>
+                        </div>
+                        <div class="col-md-3 text-center">
+                            <h3>{{ today_vehicles }}</h3>
+                            <p class="text-muted">Vehicles</p>
+                        </div>
+                        <div class="col-md-3 text-center">
+                            <h3>{{ today_people }}</h3>
+                            <p class="text-muted">People</p>
+                        </div>
+                        <div class="col-md-3 text-center">
+                            <h3>{{ today_plates }}</h3>
+                            <p class="text-muted">License Plates</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Charts -->
+    <div class="row mb-4">
+        <div class="col-md-8">
+            <div class="card shadow">
+                <div class="card-header bg-white">
+                    <h5 class="mb-0"><i class="fas fa-chart-line"></i> Detection Trends (Last 7 Days)</h5>
+                </div>
+                <div class="card-body">
+                    <div class="chart-container">
+                        <canvas id="detectionTrendChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card shadow">
+                <div class="card-header bg-white">
+                    <h5 class="mb-0"><i class="fas fa-chart-pie"></i> Detection Distribution</h5>
+                </div>
+                <div class="card-body">
+                    <div class="chart-container">
+                        <canvas id="detectionDistributionChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Latest Detections -->
+    <div class="card shadow mb-4">
+        <div class="card-header bg-white d-flex justify-content-between align-items-center">
+            <h5 class="mb-0"><i class="fas fa-clock"></i> Latest Detections</h5>
+            <a href="{% url 'history' %}" class="btn btn-sm btn-outline-primary">View All History</a>
+        </div>
+        <div class="card-body">
+            <div class="row row-cols-1 row-cols-sm-2 row-cols-md-3 row-cols-lg-4 g-4">
+                {% for detection in latest_detections %}
+                <div class="col">
+                    <div class="card h-100 shadow-sm">
+                        <img src="{{ MEDIA_URL }}{{ detection.image_path }}" 
+                             class="card-img-top detection-img" 
+                             alt="{{ detection.label }}" 
+                             data-bs-toggle="modal" 
+                             data-bs-target="#imageModal" 
+                             data-bs-image-url="{{ MEDIA_URL }}{{ detection.image_path }}">
+                        <div class="card-body">
+                            <p class="card-text mb-1">
+                                <small class="text-muted">
+                                    <i class="fas fa-tag"></i> Label: 
+                                    {% if 'car_plate_' in detection.label %}
+                                        <span class="badge bg-success">{{ detection.label|cut:"car_plate_" }}</span> (Car Plate)
+                                    {% elif detection.label == 'car_no_plate' %}
+                                        <span class="badge bg-warning text-dark">Car (No Plate)</span>
+                                    {% elif detection.label == 'person' %}
+                                        <span class="badge bg-info text-dark">Person</span>
+                                    {% else %}
+                                        <span class="badge bg-secondary">{{ detection.label }}</span>
+                                    {% endif %}
+                                </small>
+                            </p>
+                            <p class="card-text">
+                                <small class="text-muted">
+                                    <i class="fas fa-clock"></i> Detected: {{ detection.timestamp|date:"Y-m-d H:i:s" }}
+                                </small>
+                            </p>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Image Modal -->
+<div class="modal fade" id="imageModal" tabindex="-1" aria-labelledby="imageModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="imageModalLabel">Detection Image</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body text-center">
+                <img src="" class="img-fluid" id="modalImage" alt="Detection Image">
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Handle image modal
+    const imageModal = document.getElementById('imageModal');
+    if (imageModal) {
+        imageModal.addEventListener('show.bs.modal', function (event) {
+            const button = event.relatedTarget;
+            const imageUrl = button.getAttribute('data-bs-image-url');
+            const modalImage = document.getElementById('modalImage');
+            modalImage.src = imageUrl;
+        });
+    }
+    
+    // Line Chart - Detection Trends
+    const trendCtx = document.getElementById('detectionTrendChart').getContext('2d');
+    const trendChart = new Chart(trendCtx, {
+        type: 'line',
+        data: {
+            labels: {{ last_7_days_labels|safe }},
+            datasets: [
+                {
+                    label: 'Total',
+                    data: {{ last_7_days_total|safe }},
+                    borderColor: 'rgba(78, 115, 223, 1)',
+                    backgroundColor: 'rgba(78, 115, 223, 0.1)',
+                    borderWidth: 2,
+                    fill: true,
+                    tension: 0.3
+                },
+                {
+                    label: 'Vehicles',
+                    data: {{ last_7_days_vehicles|safe }},
+                    borderColor: 'rgba(40, 167, 69, 1)',
+                    backgroundColor: 'transparent',
+                    borderWidth: 2,
+                    tension: 0.3
+                },
+                {
+                    label: 'People',
+                    data: {{ last_7_days_people|safe }},
+                    borderColor: 'rgba(23, 162, 184, 1)',
+                    backgroundColor: 'transparent',
+                    borderWidth: 2,
+                    tension: 0.3
+                },
+                {
+                    label: 'License Plates',
+                    data: {{ last_7_days_plates|safe }},
+                    borderColor: 'rgba(255, 193, 7, 1)',
+                    backgroundColor: 'transparent',
+                    borderWidth: 2,
+                    tension: 0.3
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        precision: 0
+                    }
+                }
+            },
+            plugins: {
+                legend: {
+                    position: 'top'
+                }
+            }
+        }
+    });
+    
+    // Pie Chart - Detection Distribution
+    const distributionCtx = document.getElementById('detectionDistributionChart').getContext('2d');
+    const distributionChart = new Chart(distributionCtx, {
+        type: 'doughnut',
+        data: {
+            labels: ['Vehicles (No Plate)', 'Vehicles (With Plate)', 'People', 'Other'],
+            datasets: [{
+                data: [
+                    {{ vehicle_no_plate_count }}, 
+                    {{ plate_count }}, 
+                    {{ person_count }}, 
+                    {{ other_count }}
+                ],
+                backgroundColor: [
+                    'rgba(255, 193, 7, 0.8)',
+                    'rgba(40, 167, 69, 0.8)',
+                    'rgba(23, 162, 184, 0.8)',
+                    'rgba(108, 117, 125, 0.8)'
+                ],
+                borderColor: [
+                    'rgba(255, 193, 7, 1)',
+                    'rgba(40, 167, 69, 1)',
+                    'rgba(23, 162, 184, 1)',
+                    'rgba(108, 117, 125, 1)'
+                ],
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'bottom'
+                }
+            }
+        }
+    });
+});
+</script>
+{% endblock %}
