@@ -13,7 +13,8 @@ from threading import Thread
 import signal
 import traceback
 import queue
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+import uuid
 
 # --- Logging Setup ---
 logging.basicConfig(
@@ -83,13 +84,12 @@ CAMERA_CONFIGS = [
         password="rFERNANDES18",
         ip="10.0.0.112"
     ),
-CameraConfig(
+    CameraConfig(
         camera_id="camera_113",
         username="admin",
         password="rFERNANDES18",
         ip="10.0.0.113"
     ),
-
 ]
 
 # --- Detection Settings ---
@@ -107,10 +107,15 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 MAX_CACHE_IMAGES = 250
 
 # --- Duplicate Detection Settings ---
-SIMILARITY_THRESHOLD = 0.90
+# Replaced with a more robust tracking system
+# SIMILARITY_THRESHOLD = 0.90
 HASH_SIZE = 32
 DETECTION_INTERVAL = 5  # Seconds between detections at the same location
 MIN_DETECTION_INTERVAL = 1  # Minimum interval between any detections
+STALL_DETECTION_TIME = 10  # Seconds an object must be stationary to be considered stalled
+MAX_TRACKING_DISTANCE = 100  # Maximum pixel distance to match a detection to a track
+TRACK_LOSS_THRESHOLD = 15  # Seconds before a track is considered lost
+MIN_MOVEMENT_THRESHOLD = 10  # Minimum pixel movement to not be considered stalled
 
 # --- Advanced Settings ---
 SAVE_FULL_FRAME = True
@@ -155,9 +160,23 @@ if ENABLE_CONTINUOUS_RECORDING:
     logger.info(f"Continuous recording enabled. Saving to: {CONTINUOUS_RECORDING_DIR}")
 
 # --- Global State Variables for Cleanup and Reports ---
-# Use a queue for cleanup tasks to avoid blocking the main loops
 cleanup_queue = queue.Queue()
 running = True
+
+
+# --- New Dataclasses for Tracking ---
+@dataclass
+class TrackedObject:
+    """Represents a single tracked object across frames."""
+    track_id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    label: str = ""
+    centroid: tuple[int, int] = (0, 0)
+    last_seen: float = 0.0
+    last_saved: float = 0.0
+    is_stalled: bool = False
+    initial_save_done: bool = False
+    db_record_id: int = None
+    initial_centroid: tuple[int, int] = (0, 0)
 
 
 def cleanup_old_recordings():
@@ -208,86 +227,6 @@ def cleanup_database():
         logger.info(f"Database cleanup: removed {count} old detection records")
     except Exception as e:
         logger.error(f"Error during database cleanup: {e}")
-
-
-def image_hash(image):
-    """Create an improved perceptual hash of the image for duplicate detection"""
-    if image is None or image.size == 0:
-        return 0
-
-    # Resize and convert to grayscale
-    try:
-        img = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    except Exception:
-        return 0
-
-    img = cv2.resize(img, (HASH_SIZE, HASH_SIZE))
-
-    # Apply CLAHE to normalize lighting
-    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-    img = clahe.apply(img)
-
-    # Compute DCT (Discrete Cosine Transform)
-    dct = cv2.dct(np.float32(img))
-
-    # Keep only the top-left (HASH_SIZE/4)x(HASH_SIZE/4) of the DCT for a more robust hash
-    dct_low = dct[:HASH_SIZE // 4, :HASH_SIZE // 4]
-
-    # Compute the median value
-    median = np.median(dct_low)
-
-    # Create a hash based on whether each value is above the median
-    hash_value = 0
-    bit_count = 0
-    for i in range(dct_low.shape[0]):
-        for j in range(dct_low.shape[1]):
-            bit_count += 1
-            if dct_low[i, j] > median:
-                hash_value |= 1 << bit_count
-
-    return hash_value
-
-
-def hamming_distance(hash1, hash2):
-    """Calculate the Hamming distance between two hashes"""
-    return bin(hash1 ^ hash2).count('1')
-
-
-def is_duplicate(image, label_type, camera_id, recent_image_hashes):
-    """Check if an image is a duplicate of a recently detected one"""
-    if image is None or image.size == 0:
-        return True  # Consider empty images as duplicates
-
-    img_hash = image_hash(image)
-
-    if img_hash == 0:  # Invalid hash
-        return True
-
-    # Use a per-camera, per-label cache
-    cache_key = f"{camera_id}_{label_type}"
-    if cache_key not in recent_image_hashes:
-        recent_image_hashes[cache_key] = []
-
-    # Compare with recent hashes of the same type and camera
-    max_hash_distance = (HASH_SIZE // 4) * (HASH_SIZE // 4)
-
-    for stored_hash, _ in recent_image_hashes[cache_key]:
-        distance = hamming_distance(img_hash, stored_hash)
-        similarity = 1 - (distance / max_hash_distance)
-
-        if similarity >= SIMILARITY_THRESHOLD:
-            return True
-
-    # Add this hash to the recent hashes
-    current_time = time.time()
-    recent_image_hashes[cache_key].append((img_hash, current_time))
-
-    # Keep only the most recent hashes to limit memory usage
-    if len(recent_image_hashes[cache_key]) > MAX_CACHE_IMAGES:
-        recent_image_hashes[cache_key].sort(key=lambda x: x[1], reverse=True)
-        recent_image_hashes[cache_key] = recent_image_hashes[cache_key][:MAX_CACHE_IMAGES]
-
-    return False
 
 
 def enhance_image(image):
@@ -501,29 +440,21 @@ def start_new_recording(cap, frame, camera_id):
         return None, None
 
 
-def save_detection_and_metadata(frame, box, label, camera_id, position_id, recent_image_hashes, full_frame=None,
-                                plate_text=None):
-    """Save detection image and metadata"""
+def save_detection_and_metadata(frame, box, label, camera_id, position_id, full_frame=None, plate_text=None,
+                                db_record_id=None, update_existing=False):
+    """Save detection image and metadata. Updated to handle existing records."""
     try:
         x1, y1, x2, y2 = map(int, box.xyxy[0])
-
-        x1 = max(0, x1)
-        y1 = max(0, y1)
-        x2 = min(frame.shape[1], x2)
-        y2 = min(frame.shape[0], y2)
+        x1, y1, x2, y2 = max(0, x1), max(0, y1), min(frame.shape[1], x2), min(frame.shape[0], y2)
 
         if x2 <= x1 or y2 <= y1:
             logger.warning(f"Invalid bounding box dimensions: {x1},{y1},{x2},{y2}")
-            return False
+            return None
 
         detected_object_img = frame[y1:y2, x1:x2]
         enhanced_img = enhance_image(detected_object_img)
         if enhanced_img is None:
             enhanced_img = detected_object_img
-
-        if is_duplicate(enhanced_img, label, camera_id, recent_image_hashes):
-            logger.info(f"Skipping duplicate detection for {camera_id}: {label}")
-            return False
 
         timestamp = datetime.datetime.now()
         ts_str = timestamp.strftime("%Y%m%d_%H%M%S_%f")
@@ -533,44 +464,47 @@ def save_detection_and_metadata(frame, box, label, camera_id, position_id, recen
 
         cv2.imwrite(absolute_filepath, enhanced_img)
 
+        # Handle full frame with annotation
         full_frame_relative = None
         if SAVE_FULL_FRAME and full_frame is not None:
             full_frame_copy = full_frame.copy()
             cv2.rectangle(full_frame_copy, (x1, y1), (x2, y2), (0, 255, 0), 2)
-
             conf_text = f"{label} ({box.conf[0]:.2f})"
             if plate_text:
                 conf_text += f" - {plate_text}"
-
             cv2.putText(full_frame_copy, conf_text, (x1, y1 - 10),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
-
             full_frame_filename = f"full_{camera_id}_{label}_{ts_str}.jpg"
             full_frame_path = os.path.join(SAVE_DIR_ABSOLUTE, full_frame_filename)
             cv2.imwrite(full_frame_path, full_frame_copy)
-
             full_frame_relative = os.path.join(SAVE_DIR_RELATIVE, full_frame_filename)
 
         logger.info(f"Saved image for {camera_id}: {absolute_filepath}")
 
-        # Save metadata to Django database with the new fields
-        detection_record = Detection(
-            timestamp=timestamp,
-            label=label,
-            image_path=relative_filepath,
-            camera=camera_id,
-            position=position_id,
-            confidence=float(box.conf[0])
-        )
-
-        detection_record.save()
-        logger.info(f"Saved metadata to DB for {camera_id}: {label} at position {position_id}")
-
-        return True
+        if update_existing and db_record_id:
+            detection_record = Detection.objects.get(pk=db_record_id)
+            detection_record.last_updated = timestamp
+            detection_record.image_path = relative_filepath
+            # Optional: update other fields like confidence if needed
+            detection_record.save()
+            logger.info(f"Updated existing DB record {db_record_id} for {camera_id}: {label}")
+            return db_record_id
+        else:
+            detection_record = Detection(
+                timestamp=timestamp,
+                label=label,
+                image_path=relative_filepath,
+                camera=camera_id,
+                position=position_id,
+                confidence=float(box.conf[0])
+            )
+            detection_record.save()
+            logger.info(f"Saved NEW metadata to DB for {camera_id}: {label} at position {position_id}")
+            return detection_record.pk
     except Exception as e:
         logger.error(f"Error saving detection for {camera_id}: {e}")
         traceback.print_exc()
-        return False
+        return None
 
 
 def generate_daily_report():
@@ -661,8 +595,7 @@ def connect_capture_detect(camera_config: CameraConfig):
         'recording_writer': None,
         'recording_start_time': None,
         'last_motion_check_time': 0,
-        'recent_image_hashes': {},
-        'last_detection_time': {},
+        'active_tracks': {},
     }
 
     state = per_camera_state[camera_config.camera_id]
@@ -716,63 +649,112 @@ def connect_capture_detect(camera_config: CameraConfig):
             if frame_count % 3 != 0 and not motion_detected:
                 continue
 
-            last_any_detection = max(state['last_detection_time'].values()) if state['last_detection_time'] else 0
-            if current_time - last_any_detection < MIN_DETECTION_INTERVAL:
-                continue
-
             results = perform_object_detection(frame)
-
-            if results is not None and results.boxes is not None:
+            new_detections = []
+            if results and results.boxes:
                 for box in results.boxes:
                     class_id = int(box.cls[0])
                     detected_label = model.names[class_id]
                     confidence = float(box.conf[0])
+                    if confidence >= CONFIDENCE_THRESHOLD:
+                        new_detections.append({'box': box, 'label': detected_label,
+                                               'centroid': ((box.xyxy[0][0] + box.xyxy[0][2]) / 2,
+                                                            (box.xyxy[0][1] + box.xyxy[0][3]) / 2)})
 
-                    if confidence < CONFIDENCE_THRESHOLD:
-                        continue
+            unmatched_detections = new_detections.copy()
 
-                    cx = int((box.xyxy[0][0] + box.xyxy[0][2]) / 2)
-                    cy = int((box.xyxy[0][1] + box.xyxy[0][3]) / 2)
+            # Update existing tracks and check for stalled objects
+            for track_id, track in list(state['active_tracks'].items()):
+                best_match_idx = -1
+                min_distance = float('inf')
 
-                    grid_x = max(50, int(frame.shape[1] / 20))
-                    grid_y = max(50, int(frame.shape[0] / 20))
+                # Find the best match for the existing track
+                for i, new_det in enumerate(unmatched_detections):
+                    distance = np.linalg.norm(np.array(track.centroid) - np.array(new_det['centroid']))
+                    if distance < min_distance and distance < MAX_TRACKING_DISTANCE:
+                        min_distance = distance
+                        best_match_idx = i
 
-                    pseudo_id = f"{detected_label}_{cx // grid_x}_{cy // grid_y}"
+                if best_match_idx != -1:
+                    # Match found! Update the track with new information
+                    matched_det = unmatched_detections.pop(best_match_idx)
 
-                    if current_time - state['last_detection_time'].get(pseudo_id, 0) > DETECTION_INTERVAL:
-                        logger.info(f"[{camera_config.camera_id}] Detected: {detected_label} (Conf: {confidence:.2f})")
+                    # Check for stalling
+                    movement = np.linalg.norm(np.array(track.initial_centroid) - np.array(matched_det['centroid']))
 
-                        final_label = detected_label
-                        plate_text = None
+                    if movement < MIN_MOVEMENT_THRESHOLD:
+                        if current_time - track.last_seen > STALL_DETECTION_TIME:
+                            track.is_stalled = True
+                    else:
+                        track.is_stalled = False
+                        track.initial_centroid = matched_det['centroid']  # Reset initial centroid when moving
 
-                        if detected_label == 'car' or detected_label == 'truck':
-                            x1, y1, x2, y2 = map(int, box.xyxy[0])
-                            x1 = max(0, x1)
-                            y1 = max(0, y1)
-                            x2 = min(frame.shape[1], x2)
-                            y2 = min(frame.shape[0], y2)
+                    # Update track state
+                    track.centroid = matched_det['centroid']
+                    track.last_seen = current_time
 
-                            if x2 <= x1 or y2 <= y1:
-                                continue
+                    # Save detection logic
+                    if track.initial_save_done:
+                        if track.is_stalled and current_time - track.last_saved > DETECTION_INTERVAL:
+                            logger.info(
+                                f"[{camera_config.camera_id}] Stalled object ({track.label}) detected. Updating record...")
+                            db_record_id = save_detection_and_metadata(
+                                frame, matched_det['box'], track.label, camera_config.camera_id,
+                                str(track.track_id), full_frame=frame, update_existing=True,
+                                db_record_id=track.db_record_id
+                            )
+                            if db_record_id:
+                                track.last_saved = current_time
+                        elif not track.is_stalled:
+                            logger.info(
+                                f"[{camera_config.camera_id}] Moving object ({track.label}) detected. Saving new record...")
+                            db_record_id = save_detection_and_metadata(
+                                frame, matched_det['box'], track.label, camera_config.camera_id,
+                                str(track.track_id), full_frame=frame
+                            )
+                            if db_record_id:
+                                track.db_record_id = db_record_id
+                                track.last_saved = current_time
 
-                            car_image = frame[y1:y2, x1:x2]
-                            plate_text = perform_lpr(car_image)
-
-                            if plate_text:
-                                logger.info(f"[{camera_config.camera_id}]   LPR Result: {plate_text}")
-                                final_label = f"car_plate_{plate_text}"
-                            else:
-                                final_label = "car_no_plate"
-
-                        saved = save_detection_and_metadata(
-                            frame, box, final_label,
-                            camera_config.camera_id, pseudo_id,
-                            state['recent_image_hashes'],
-                            full_frame=frame, plate_text=plate_text
+                    else:  # Initial save for this track
+                        logger.info(
+                            f"[{camera_config.camera_id}] New object ({track.label}) detected. Saving initial record...")
+                        db_record_id = save_detection_and_metadata(
+                            frame, matched_det['box'], track.label, camera_config.camera_id,
+                            str(track.track_id), full_frame=frame
                         )
+                        if db_record_id:
+                            track.db_record_id = db_record_id
+                            track.initial_save_done = True
+                            track.last_saved = current_time
 
-                        if saved:
-                            state['last_detection_time'][pseudo_id] = current_time
+                else:
+                    # No match found, track might be lost
+                    if current_time - track.last_seen > TRACK_LOSS_THRESHOLD:
+                        del state['active_tracks'][track_id]
+                        logger.info(f"[{camera_config.camera_id}] Track {track_id} for {track.label} lost and removed.")
+
+            # Create new tracks for unmatched detections
+            for new_det in unmatched_detections:
+                new_track = TrackedObject(
+                    label=new_det['label'],
+                    centroid=new_det['centroid'],
+                    last_seen=current_time,
+                    last_saved=current_time,
+                    initial_centroid=new_det['centroid']
+                )
+                state['active_tracks'][new_track.track_id] = new_track
+
+                # Immediately save the first detection for this new track
+                logger.info(
+                    f"[{camera_config.camera_id}] New object ({new_track.label}) detected. Saving initial record...")
+                db_record_id = save_detection_and_metadata(
+                    frame, new_det['box'], new_track.label, camera_config.camera_id,
+                    str(new_track.track_id), full_frame=frame
+                )
+                if db_record_id:
+                    new_track.db_record_id = db_record_id
+                    new_track.initial_save_done = True
 
             # Check for a single cleanup trigger time (e.g., midnight)
             if datetime.datetime.now().hour == 0 and datetime.datetime.now().minute == 1 and frame_count % 100 == 0:
