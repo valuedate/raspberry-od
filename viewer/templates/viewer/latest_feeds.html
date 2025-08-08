@@ -1,0 +1,71 @@
+{% extends 'viewer/base.html' %}
+
+{% block title %}Live Camera View{% endblock %}
+{% block styles %}
+<meta http-equiv="refresh" content="5">
+<style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f4;
+            color: #333;
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 20px;
+        }
+        .detection-card {
+            background-color: #fff;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+            transition: transform 0.2s;
+        }
+        .detection-card:hover {
+            transform: translateY(-5px);
+        }
+        .card-header {
+            background-color: #007BFF;
+            color: white;
+            padding: 10px;
+            font-weight: bold;
+        }
+        .card-content {
+            padding: 15px;
+        }
+        .card-content img {
+            width: 100%;
+            height: auto;
+            border-radius: 4px;
+            margin-bottom: 10px;
+        }
+        .info-item {
+            margin-bottom: 5px;
+        }
+    </style>
+    {% endblock %}
+{% block content %}
+
+<div class="container">
+        {% for detection in latest_detections %}
+            <div class="detection-card">
+                <div class="card-header">
+                    Camera: {{ detection.camera }}
+                </div>
+                <div class="card-content">
+                    {% if detection.image_path %}
+                        <img src="/media/{{ detection.image_path }}" alt="Detection from {{ detection.camera }}">
+                    {% else %}
+                        <p>No image available.</p>
+                    {% endif %}
+                    <div class="info-item"><strong>Label:</strong> {{ detection.label }}</div>
+                    <div class="info-item"><strong>Position:</strong> {{ detection.position }}</div>
+                    <div class="info-item"><strong>Time:</strong> {{ detection.timestamp|date:"M d, Y H:i:s" }}</div>
+                </div>
+            </div>
+        {% endfor %}
+    </div>
+{% endblock %}
+

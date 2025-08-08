@@ -79,7 +79,7 @@ def live_stream_view(request):
     """View function for the live stream page."""
     global stream_thread
     # Start the background frame capture thread if it's not running
-    if stream_thread is None or not stream_thread.is_alive():
+    # if stream_thread is None or not stream_thread.is_alive():
         print("Starting background frame capture thread...")
         stop_stream_event.clear()
         stream_thread = threading.Thread(target=capture_frames)
@@ -242,3 +242,25 @@ class DashboardView(TemplateView):
             return 100 if current > 0 else 0
         return round(((current - previous) / previous) * 100)
 
+
+def latest_feeds(request):
+    """
+    Retrieves the latest detection for each distinct camera.
+
+    Note: The `distinct('camera')` method requires a database like PostgreSQL.
+    If you are using SQLite, you would need a more complex query or
+    to manually filter the results in Python.
+    """
+    # Order by camera and then by the newest timestamp.
+    # `distinct('camera')` then selects the first entry for each unique camera,
+    # which is the one with the latest timestamp.
+    latest_detections = (
+        Detection.objects.order_by('camera', '-timestamp')
+        .distinct('camera')
+    )
+
+    context = {
+        'latest_detections': latest_detections,
+    }
+
+    return render(request, 'viewer/latest_feeds.html', context)
