@@ -245,19 +245,21 @@ class DashboardView(TemplateView):
 
 def latest_feeds(request):
     """
-    Retrieves the latest detection for each distinct camera.
-
-    Note: The `distinct('camera')` method requires a database like PostgreSQL.
-    If you are using SQLite, you would need a more complex query or
-    to manually filter the results in Python.
+    Retrieves the latest detection for each distinct camera,
+    using a database-agnostic method.
     """
-    # Order by camera and then by the newest timestamp.
-    # `distinct('camera')` then selects the first entry for each unique camera,
-    # which is the one with the latest timestamp.
-    latest_detections = (
-        Detection.objects.order_by('camera', '-timestamp')
-        .distinct('camera')
-    )
+    # Fetch all detections, ordered by camera and then newest timestamp
+    all_detections = Detection.objects.order_by('camera', '-timestamp')
+
+    latest_detections_dict = {}
+    for detection in all_detections:
+        # If the camera is not yet in our dictionary, add the detection.
+        # Since the list is sorted by timestamp descending, the first one
+        # we encounter for each camera will be the latest.
+        if detection.camera not in latest_detections_dict:
+            latest_detections_dict[detection.camera] = detection
+
+    latest_detections = list(latest_detections_dict.values())
 
     context = {
         'latest_detections': latest_detections,
