@@ -71,25 +71,13 @@ CAMERA_CONFIGS = [
         password="rFERNANDES18",
         ip="10.0.0.115"
     ),
-    CameraConfig(
-        camera_id="camera_111",
-        username="admin",
-        password="rFERNANDES18",
-        ip="10.0.0.111"
-    ),
-    CameraConfig(
-        camera_id="camera_112",
-        username="admin",
-        password="rFERNANDES18",
-        ip="10.0.0.112"
-    ),
-CameraConfig(
-        camera_id="camera_113",
-        username="admin",
-        password="rFERNANDES18",
-        ip="10.0.0.113"
-    ),
-
+    # Add more cameras here
+    # CameraConfig(
+    #     camera_id="camera_116",
+    #     username="admin",
+    #     password="your_password",
+    #     ip="10.0.0.116"
+    # )
 ]
 
 # --- Detection Settings ---
@@ -501,7 +489,8 @@ def start_new_recording(cap, frame, camera_id):
         return None, None
 
 
-def save_detection_and_metadata(frame, box, label, camera_id, position_id, full_frame=None, plate_text=None):
+def save_detection_and_metadata(frame, box, label, camera_id, position_id, recent_image_hashes, full_frame=None,
+                                plate_text=None):
     """Save detection image and metadata"""
     try:
         x1, y1, x2, y2 = map(int, box.xyxy[0])
@@ -520,8 +509,6 @@ def save_detection_and_metadata(frame, box, label, camera_id, position_id, full_
         if enhanced_img is None:
             enhanced_img = detected_object_img
 
-        # We need to pass the recent_image_hashes and camera_id to this function
-        # This is a key change for multi-camera support
         if is_duplicate(enhanced_img, label, camera_id, recent_image_hashes):
             logger.info(f"Skipping duplicate detection for {camera_id}: {label}")
             return False
@@ -559,8 +546,8 @@ def save_detection_and_metadata(frame, box, label, camera_id, position_id, full_
             timestamp=timestamp,
             label=label,
             image_path=relative_filepath,
-            camera=camera_id,  # New field
-            position=position_id,  # New field
+            camera=camera_id,
+            position=position_id,
             confidence=float(box.conf[0])
         )
 
@@ -765,10 +752,10 @@ def connect_capture_detect(camera_config: CameraConfig):
                             else:
                                 final_label = "car_no_plate"
 
-                        # Pass the new arguments to the save function
                         saved = save_detection_and_metadata(
                             frame, box, final_label,
                             camera_config.camera_id, pseudo_id,
+                            state['recent_image_hashes'],
                             full_frame=frame, plate_text=plate_text
                         )
 
