@@ -71,13 +71,25 @@ CAMERA_CONFIGS = [
         password="rFERNANDES18",
         ip="10.0.0.115"
     ),
-    # Add more cameras here
-    # CameraConfig(
-    #     camera_id="camera_116",
-    #     username="admin",
-    #     password="your_password",
-    #     ip="10.0.0.116"
-    # )
+    CameraConfig(
+        camera_id="camera_111",
+        username="admin",
+        password="rFERNANDES18",
+        ip="10.0.0.111"
+    ),
+    CameraConfig(
+        camera_id="camera_112",
+        username="admin",
+        password="rFERNANDES18",
+        ip="10.0.0.112"
+    ),
+CameraConfig(
+        camera_id="camera_113",
+        username="admin",
+        password="rFERNANDES18",
+        ip="10.0.0.113"
+    ),
+
 ]
 
 # --- Detection Settings ---
@@ -489,7 +501,7 @@ def start_new_recording(cap, frame, camera_id):
         return None, None
 
 
-def save_detection_and_metadata(frame, box, label, camera_id, full_frame=None, plate_text=None):
+def save_detection_and_metadata(frame, box, label, camera_id, position_id, full_frame=None, plate_text=None):
     """Save detection image and metadata"""
     try:
         x1, y1, x2, y2 = map(int, box.xyxy[0])
@@ -542,20 +554,18 @@ def save_detection_and_metadata(frame, box, label, camera_id, full_frame=None, p
 
         logger.info(f"Saved image for {camera_id}: {absolute_filepath}")
 
+        # Save metadata to Django database with the new fields
         detection_record = Detection(
             timestamp=timestamp,
-            camera_id=camera_id,  # You'll need to add this field to your Django model
             label=label,
             image_path=relative_filepath,
+            camera=camera_id,  # New field
+            position=position_id,  # New field
             confidence=float(box.conf[0])
         )
 
-        # Add additional fields if your model supports them
-        # detection_record.full_frame_path = full_frame_relative
-        # detection_record.license_plate = plate_text
-
         detection_record.save()
-        logger.info(f"Saved metadata to DB for {camera_id}: {label}")
+        logger.info(f"Saved metadata to DB for {camera_id}: {label} at position {position_id}")
 
         return True
     except Exception as e:
@@ -571,15 +581,15 @@ def generate_daily_report():
     try:
         all_stats = Detection.objects.filter(
             timestamp__date=today
-        ).values('camera_id', 'label').annotate(count=Count('label')).order_by('camera_id', '-count')
+        ).values('camera', 'label').annotate(count=Count('label')).order_by('camera', '-count')
 
         report = f"Daily Detection Report for {today}\n"
         report += "=" * 40 + "\n\n"
 
         current_camera = None
         for stat in all_stats:
-            if stat['camera_id'] != current_camera:
-                current_camera = stat['camera_id']
+            if stat['camera'] != current_camera:
+                current_camera = stat['camera']
                 report += f"\nCamera ID: {current_camera}\n"
                 report += "-" * 20 + "\n"
             report += f"- {stat['label']}: {stat['count']}\n"
@@ -620,7 +630,7 @@ def run_cleanup_tasks():
         except queue.Empty:
             # Check for a cleanup task once per day at midnight
             current_time = datetime.datetime.now()
-            if current_time.hour == 0 and current_time.minute == 0:
+            if current_time.hour == 0 and current_time.minute == 1:
                 cleanup_queue.put("db_cleanup")
                 cleanup_queue.put("daily_report")
                 cleanup_queue.put("recording_cleanup")
@@ -755,8 +765,12 @@ def connect_capture_detect(camera_config: CameraConfig):
                             else:
                                 final_label = "car_no_plate"
 
-                        saved = save_detection_and_metadata(frame, box, final_label, camera_config.camera_id,
-                                                            full_frame=frame, plate_text=plate_text)
+                        # Pass the new arguments to the save function
+                        saved = save_detection_and_metadata(
+                            frame, box, final_label,
+                            camera_config.camera_id, pseudo_id,
+                            full_frame=frame, plate_text=plate_text
+                        )
 
                         if saved:
                             state['last_detection_time'][pseudo_id] = current_time
