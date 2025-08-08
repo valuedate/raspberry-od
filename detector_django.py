@@ -71,13 +71,25 @@ CAMERA_CONFIGS = [
         password="rFERNANDES18",
         ip="10.0.0.115"
     ),
-    # Add more cameras here
-    # CameraConfig(
-    #     camera_id="camera_116",
-    #     username="admin",
-    #     password="your_password",
-    #     ip="10.0.0.116"
-    # )
+    CameraConfig(
+        camera_id="camera_111",
+        username="admin",
+        password="rFERNANDES18",
+        ip="10.0.0.111"
+    ),
+    CameraConfig(
+        camera_id="camera_112",
+        username="admin",
+        password="rFERNANDES18",
+        ip="10.0.0.112"
+    ),
+CameraConfig(
+        camera_id="camera_113",
+        username="admin",
+        password="rFERNANDES18",
+        ip="10.0.0.113"
+    ),
+
 ]
 
 # --- Detection Settings ---
