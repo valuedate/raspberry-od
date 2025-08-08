@@ -79,7 +79,7 @@ def live_stream_view(request):
     """View function for the live stream page."""
     global stream_thread
     # Start the background frame capture thread if it's not running
-    # if stream_thread is None or not stream_thread.is_alive():
+    if stream_thread is None or not stream_thread.is_alive():
         print("Starting background frame capture thread...")
         stop_stream_event.clear()
         stream_thread = threading.Thread(target=capture_frames)
